@@ -69,3 +69,11 @@ def test_run_exits_on_no_create_table(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         run([str(bad_file)])
     assert exc_info.value.code == 1
+
+
+def test_run_does_not_write_to_stdout_when_output_file_given(schema_file, tmp_path, capsys):
+    """Ensure that when -o is specified, INSERT statements are not also printed to stdout."""
+    out_path = str(tmp_path / "seed.sql")
+    run([schema_file, "-n", "2", "-o", out_path])
+    captured = capsys.readouterr()
+    assert "INSERT INTO products" not in captured.out
