@@ -41,14 +41,6 @@ def build_relationship_graph(tables: List[TableDefinition]) -> RelationshipGraph
 def topological_sort(graph: RelationshipGraph) -> List[str]:
     """Return tables in insertion order (dependencies first) using Kahn's algorithm."""
     in_degree: Dict[str, int] = {t: 0 for t in graph.tables}
-
-    for table, deps in graph.dependencies.items():
-        for dep in deps:
-            if dep in in_degree:
-                in_degree[table] = in_degree.get(table, 0) + 1
-
-    # Recount properly
-    in_degree = {t: 0 for t in graph.tables}
     for table in graph.tables:
         for dep in graph.dependencies.get(table, []):
             if dep in graph.tables:
@@ -80,3 +72,25 @@ def get_dependencies(graph: RelationshipGraph, table_name: str) -> List[str]:
 def get_dependents(graph: RelationshipGraph, table_name: str) -> List[str]:
     """Return tables that directly depend on the given table."""
     return graph.dependents.get(table_name, [])
+
+
+def get_all_dependencies(graph: RelationshipGraph, table_name: str) -> List[str]:
+    """Return all transitive dependencies of a table in breadth-first order.
+
+    The result includes direct and indirect dependencies, but excludes the
+    starting table itself. Tables are returned in the order they are first
+    encountered during traversal.
+    """
+    visited: Set[str] = set()
+    queue: deque = deque(graph.dependencies.get(table_name, []))
+    order: List[str] = []
+
+    while queue:
+        dep = queue.popleft()
+        if dep in visited:
+            continue
+        visited.add(dep)
+        order.append(dep)
+        queue.extend(graph.dependencies.get(dep, []))
+
+    return order
