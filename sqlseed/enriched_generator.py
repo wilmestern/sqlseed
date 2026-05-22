@@ -1,60 +1,65 @@
-"""Enriched value generation that combines semantic hints with fallback data generation."""
+"""Enriched row generator combining semantic hints, null policy, and value overrides."""
+from typing import Any, Dict, Optional
 
-from typing import Any, Optional
-
-from sqlseed.schema_parser import ColumnDefinition
+from sqlseed.schema_parser import TableDefinition, ColumnDefinition
 from sqlseed.semantic_generator import generate_semantic_value
-from sqlseed.data_generator import generate_value
+from sqlseed.column_type_affinity import get_affinity, get_semantic_hint
 from sqlseed.null_policy import NullPolicy, apply_null_policy
 from sqlseed.value_overrides import OverrideRegistry
+from sqlseed.data_generator import generate_value
+
+_default_policy = NullPolicy()
+_default_registry = OverrideRegistry()
 
 
 def generate_enriched_value(
-    column: ColumnDefinition,
-    null_policy: Optional[NullPolicy] = None,
-    overrides: Optional[OverrideRegistry] = None,
-    table_name: str = "",
+    table_name: str,
+    col: ColumnDefinition,
+    policy: Optional[NullPolicy] = None,
+    registry: Optional[OverrideRegistry] = None,
 ) -> Any:
-    """Generate a value for *column* using the full enrichment pipeline.
+    """Generate a single enriched value for *col* in *table_name*.
 
     Resolution order:
-    1. Override registry (explicit caller-supplied value).
-    2. Null policy (may short-circuit to None for nullable columns).
-    3. Semantic generator (column-name / type-affinity hints).
-    4. Fallback generic generator.
+    1. Override registry
+    2. Null policy
+    3. Semantic generator (if hint found)
+    4. Type-affinity-based generator
     """
-    # 1. Override registry
-    if overrides is not None and overrides.has(table_name, column.name):
-        return overrides.get(table_name, column.name)
+    pol = policy or _default_policy
+    reg = registry or _default_registry
 
-    # 2. Null policy
-    if null_policy is not None:
-        null_result = apply_null_policy(column, null_policy)
-        if null_result is None and column.nullable:
-            return None
+    if reg.has(table_name, col.name):
+        override = reg.get(table_name, col.name)
+        return override() if callable(override) else override
 
-    # 3. Semantic generator
-    semantic = generate_semantic_value(column)
-    if semantic is not None:
-        return semantic
+    if apply_null_policy(col, pol):
+        return None
 
-    # 4. Fallback
-    return generate_value(column)
+    hint = get_semantic_hint(col.name)
+    if hint:
+        return generate_semantic_value(col, hint)
+
+    affinity = get_affinity(col.col_type)
+    return generate_value(col.col_type, col.max_length)
 
 
 def generate_enriched_row(
-    columns: list[ColumnDefinition],
-    null_policy: Optional[NullPolicy] = None,
-    overrides: Optional[OverrideRegistry] = None,
-    table_name: str = "",
-) -> dict[str, Any]:
-    """Return a dict mapping column names to generated values for all *columns*."""
-    return {
-        col.name: generate_enriched_value(
-            col,
-            null_policy=null_policy,
-            overrides=overrides,
-            table_name=table_name,
-        )
-        for col in columns
-    }
+    table: TableDefinition,
+    policy: Optional[NullPolicy] = None,
+    registry: Optional[OverrideRegistry] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generate a full row dict for *table* with enriched values.
+
+    *overrides* is a plain dict that takes highest precedence (used by hooks).
+    """
+    row: Dict[str, Any] = {}
+    for col in table.columns:
+        if overrides and col.name in overrides:
+            row[col.name] = overrides[col.name]
+        else:
+            row[col.name] = generate_enriched_value(
+                table.name, col, policy=policy, registry=registry
+            )
+    return row
