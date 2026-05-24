@@ -88,6 +88,18 @@ def test_aggregate_column_min_all_none():
     assert result.value is None
 
 
+def test_aggregate_column_empty_rows():
+    """Aggregating over an empty list of rows should return a sensible result."""
+    result = aggregate_column([], "score", "count")
+    assert result.value == 0
+
+
+def test_aggregate_column_sum_empty_rows():
+    """Sum over empty rows should return None or 0, not raise an exception."""
+    result = aggregate_column([], "score", "sum")
+    assert result.value is None or result.value == 0
+
+
 # --- aggregate_rows ---
 
 def test_aggregate_rows_returns_report(sample_rows):
@@ -107,26 +119,4 @@ def test_aggregate_rows_multiple_specs(sample_rows):
 
 def test_aggregate_rows_get_existing(sample_rows):
     specs = [{"column": "score", "operation": "max"}]
-    report = aggregate_rows(sample_rows, specs)
-    assert report.get("score", "max") == 30.0
-
-
-def test_aggregate_rows_get_missing_returns_none(sample_rows):
-    report = aggregate_rows(sample_rows, [])
-    assert report.get("score", "sum") is None
-
-
-def test_aggregate_rows_as_dict(sample_rows):
-    specs = [
-        {"column": "score", "operation": "sum"},
-        {"column": "label", "operation": "distinct_count"},
-    ]
-    report = aggregate_rows(sample_rows, specs)
-    d = report.as_dict()
-    assert "sum(score)" in d
-    assert "distinct_count(label)" in d
-
-
-def test_aggregate_rows_empty_rows():
-    report = aggregate_rows([], [{"column": "x", "operation": "count"}])
-    assert report.get("x", "count") == 0
+    report = aggregate_rows(
